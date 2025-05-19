@@ -48,7 +48,7 @@ GPT-SoVITS现已支持以下语言：
 
 1. **克隆仓库**：
    ```bash
-   git clone https://github.com/你的用户名/GPT-SoVITS.git
+   git clone https://github.com/GentlemanHu/GPT-SoVITS.git
    cd GPT-SoVITS
    ```
 
