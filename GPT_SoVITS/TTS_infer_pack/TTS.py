@@ -256,7 +256,7 @@ class TTS_Config:
     }
     configs: dict = None
     v1_languages: list = ["auto", "en", "zh", "ja", "all_zh", "all_ja"]
-    v2_languages: list = ["auto", "auto_yue", "en", "zh", "ja", "yue", "ko", "all_zh", "all_ja", "all_yue", "all_ko"]
+    v2_languages: list = ["auto", "auto_yue", "en", "zh", "ja", "yue", "ko", "pt", "es", "all_zh", "all_ja", "all_yue", "all_ko", "all_pt", "all_es"]
     languages: list = v2_languages
     # "all_zh",#全部按中文识别
     # "en",#全部按英文识别#######不变
@@ -572,7 +572,7 @@ class TTS:
                 self.vocoder.cpu()
                 del self.vocoder
                 self.empty_cache()
-                
+
             self.vocoder = BigVGAN.from_pretrained(
                 "%s/GPT_SoVITS/pretrained_models/models--nvidia--bigvgan_v2_24khz_100band_256x" % (now_dir,),
                 use_cuda_kernel=False,
@@ -1439,7 +1439,7 @@ class TTS:
         ref_audio = ref_audio.to(self.configs.device).float()
         if ref_audio.shape[0] == 2:
             ref_audio = ref_audio.mean(0).unsqueeze(0)
-            
+
         # tgt_sr = self.vocoder_configs["sr"]
         tgt_sr = 24000 if self.configs.version == "v3" else 32000
         if ref_sr != tgt_sr:

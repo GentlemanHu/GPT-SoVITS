@@ -779,6 +779,20 @@ yue_symbols = {
     "Yyun2",
 }
 
+# 葡萄牙语音素
+pt_symbols = {
+    "a", "e", "i", "o", "u", "á", "é", "í", "ó", "ú", "â", "ê", "ô", "ã", "õ",
+    "b", "d", "f", "g", "k", "l", "m", "n", "p", "r", "s", "t", "v", "z",
+    "ç", "j", "x", "h", "rr", "nh", "lh", "ch", "br", "cr", "dr", "fr", "gr", "pr", "tr", "vr",
+}
+
+# 西班牙语音素
+es_symbols = {
+    "a", "e", "i", "o", "u", "á", "é", "í", "ó", "ú", "ü",
+    "b", "c", "d", "f", "g", "h", "j", "k", "l", "m", "n", "ñ", "p", "q", "r", "s", "t", "v", "w", "x", "y", "z",
+    "ch", "ll", "rr", "th", "fl", "fr", "pl", "pr", "bl", "br", "cl", "cr", "gl", "gr", "dr", "tr",
+}
+
 # symbols = [pad] + c + v + ja_symbols + pu_symbols + list(arpa)+list(ko_symbols)#+list(yue_symbols)###直接这么加yue顺序乱了
 symbols = [pad] + c + v + ja_symbols + pu_symbols + list(arpa)
 symbols = sorted(set(symbols))
@@ -786,6 +800,8 @@ symbols = sorted(set(symbols))
 symbols += ["[", "]"]  ##日文新增上升下降调型
 symbols += sorted(list(ko_symbols))
 symbols += sorted(list(yue_symbols))  ##新加的yue统一摆在后头#已查过开头加Y后没有重复，韩文显然不会重复
+symbols += sorted(list(pt_symbols))  ##葡萄牙语音素
+symbols += sorted(list(es_symbols))  ##西班牙语音素
 # print(len(symbols))
 if __name__ == "__main__":
     print(len(symbols))

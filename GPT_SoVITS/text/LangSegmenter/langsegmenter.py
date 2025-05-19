@@ -72,6 +72,49 @@ def split_jako(tag_lang, item):
     return lang_list
 
 
+def split_ptes(tag_lang, item):
+    """分割葡萄牙语或西班牙语文本"""
+    # 葡萄牙语和西班牙语特有字符和组合
+    if tag_lang == "pt":
+        # 葡萄牙语特有字符：ã, õ, á, à, â, ê, ô, ç等
+        pattern = r"([a-zA-Z]*[áàâãõêôç][a-zA-Z]*(?:[0-9,.!?;: ]+[a-zA-Z]*[áàâãõêôç][a-zA-Z]*)*)"
+    else:  # es
+        # 西班牙语特有字符：ñ, á, é, í, ó, ú, ü等
+        pattern = r"([a-zA-Z]*[áéíóúüñ][a-zA-Z]*(?:[0-9,.!?;: ]+[a-zA-Z]*[áéíóúüñ][a-zA-Z]*)*)"
+
+    lang_list: list[dict] = []
+    tag = 0
+    for match in re.finditer(pattern, item["text"], re.IGNORECASE):
+        if match.start() > tag:
+            lang_list.append({"lang": item["lang"], "text": item["text"][tag : match.start()]})
+
+        tag = match.end()
+        lang_list.append({"lang": tag_lang, "text": item["text"][match.start() : match.end()]})
+
+    if tag < len(item["text"]):
+        lang_list.append({"lang": item["lang"], "text": item["text"][tag : len(item["text"])]})
+
+    return lang_list
+
+
+def is_pt_text(text):
+    """检测文本是否包含葡萄牙语特有特征"""
+    # 葡萄牙语特有字符和词组
+    pt_chars = r"[ãõêôç]"
+    pt_words = r"\b(não|está|você|obrigado|como|muito|bem|bom|dia|noite|sim|não|por favor)\b"
+
+    return bool(re.search(pt_chars, text, re.IGNORECASE)) or bool(re.search(pt_words, text, re.IGNORECASE))
+
+
+def is_es_text(text):
+    """检测文本是否包含西班牙语特有特征"""
+    # 西班牙语特有字符和词组
+    es_chars = r"[ñü]"
+    es_words = r"\b(hola|gracias|cómo|está|buenos|días|noches|sí|no|por favor|señor|señora)\b"
+
+    return bool(re.search(es_chars, text, re.IGNORECASE)) or bool(re.search(es_words, text, re.IGNORECASE))
+
+
 def merge_lang(lang_list, item):
     if lang_list and item["lang"] == lang_list[-1]["lang"]:
         lang_list[-1]["text"] += item["text"]
@@ -81,7 +124,7 @@ def merge_lang(lang_list, item):
 
 
 class LangSegmenter:
-    # 默认过滤器, 基于gsv目前四种语言
+    # 默认过滤器, 基于gsv目前八种语言
     DEFAULT_LANG_MAP = {
         "zh": "zh",
         "yue": "zh",  # 粤语
@@ -91,6 +134,14 @@ class LangSegmenter:
         "ko": "ko",
         "ja": "ja",
         "en": "en",
+        "pt": "pt",  # 葡萄牙语
+        "es": "es",  # 西班牙语
+        "pt-br": "pt",  # 巴西葡萄牙语
+        "pt-pt": "pt",  # 欧洲葡萄牙语
+        "es-es": "es",  # 欧洲西班牙语
+        "es-mx": "es",  # 墨西哥西班牙语
+        "es-ar": "es",  # 阿根廷西班牙语
+        "es-co": "es",  # 哥伦比亚西班牙语
     }
 
     def getTexts(text):
@@ -128,8 +179,32 @@ class LangSegmenter:
                 else:
                     temp_list.append(ko_item)
 
-            # 未存在非日韩文夹日韩文
-            if len(temp_list) == 1:
+            # 处理葡萄牙语和西班牙语
+            pt_es_list: list[dict] = []
+            final_list: list[dict] = []
+
+            for _, temp_item in enumerate(temp_list):
+                # 如果不是葡萄牙语或西班牙语，检查是否包含葡萄牙语或西班牙语特征
+                if temp_item["lang"] not in ["pt", "es"]:
+                    # 检查是否包含葡萄牙语特征
+                    if is_pt_text(temp_item["text"]):
+                        pt_list = split_ptes("pt", temp_item)
+                        if pt_list:
+                            pt_es_list.extend(pt_list)
+                            continue
+
+                    # 检查是否包含西班牙语特征
+                    if is_es_text(temp_item["text"]):
+                        es_list = split_ptes("es", temp_item)
+                        if es_list:
+                            pt_es_list.extend(es_list)
+                            continue
+
+                # 如果没有检测到葡萄牙语或西班牙语特征，保留原始项
+                pt_es_list.append(temp_item)
+
+            # 未存在非日韩葡西文夹日韩葡西文
+            if len(pt_es_list) == 1:
                 # 未知语言检查是否为CJK
                 if dict_item["lang"] == "x":
                     cjk_text = full_cjk(dict_item["text"])
@@ -141,16 +216,17 @@ class LangSegmenter:
                     lang_list = merge_lang(lang_list, dict_item)
                     continue
 
-            # 存在非日韩文夹日韩文
-            for _, temp_item in enumerate(temp_list):
+            # 存在非日韩葡西文夹日韩葡西文
+            for _, final_item in enumerate(pt_es_list):
                 # 未知语言检查是否为CJK
-                if temp_item["lang"] == "x":
+                if final_item["lang"] == "x":
                     cjk_text = full_cjk(dict_item["text"])
                     if cjk_text:
                         dict_item = {"lang": "zh", "text": cjk_text}
                         lang_list = merge_lang(lang_list, dict_item)
                 else:
-                    lang_list = merge_lang(lang_list, temp_item)
+                    lang_list = merge_lang(lang_list, final_item)
+
         return lang_list
 
 
@@ -159,4 +235,10 @@ if __name__ == "__main__":
     print(LangSegmenter.getTexts(text))
 
     text = "ねえ、知ってる？最近、僕は天文学を勉強してるんだ。君の瞳が星空みたいにキラキラしてるからさ。"
+    print(LangSegmenter.getTexts(text))
+
+    text = "Hola, me llamo Juan. 你好，我叫小明。Hello, my name is John."
+    print(LangSegmenter.getTexts(text))
+
+    text = "Olá, como está? Eu estou bem, obrigado!"
     print(LangSegmenter.getTexts(text))

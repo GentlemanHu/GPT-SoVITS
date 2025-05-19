@@ -1002,10 +1002,14 @@ dict_language = {
     "英文": "en",
     "日文": "all_ja",
     "韩文": "all_ko",
+    "葡萄牙语": "all_pt",
+    "西班牙语": "all_es",
     "中英混合": "zh",
     "粤英混合": "yue",
     "日英混合": "ja",
     "韩英混合": "ko",
+    "葡英混合": "pt",
+    "西英混合": "es",
     "多语种混合": "auto",  # 多语种启动切分识别语种
     "多语种混合(粤语)": "auto_yue",
     "all_zh": "all_zh",
@@ -1013,12 +1017,18 @@ dict_language = {
     "en": "en",
     "all_ja": "all_ja",
     "all_ko": "all_ko",
+    "all_pt": "all_pt",
+    "all_es": "all_es",
     "zh": "zh",
     "yue": "yue",
     "ja": "ja",
     "ko": "ko",
+    "pt": "pt",
+    "es": "es",
     "auto": "auto",
     "auto_yue": "auto_yue",
+    "portuguese": "all_pt",
+    "spanish": "all_es",
 }
 
 # logger
