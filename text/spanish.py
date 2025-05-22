@@ -1,353 +1,309 @@
+"""
+西班牙语文本处理模块 - Spanish text processing module
+"""
 import re
-from typing import Dict, List, Union, Tuple
+import unicodedata
+from typing import List, Tuple
+import string
 
-# 西班牙语音素集 - 扩展版本
-_spanish_phonemes = [
-    # 元音
-    'a', 'e', 'i', 'o', 'u', 'á', 'é', 'í', 'ó', 'ú', 'ü',
-    # 辅音
-    'b', 'c', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 'm', 'n', 'ñ', 'p', 'q', 'r', 's', 't', 'v', 'w', 'x', 'y', 'z',
-    'ch', 'll', 'rr', 'th', 'fl', 'fr', 'pl', 'pr', 'bl', 'br', 'cl', 'cr', 'gl', 'gr', 'dr', 'tr',
-    # 特殊符号
-    ' ', '.', ',', '!', '?', ';', ':', '-'
-]
+# 西班牙语正则表达式模式
+_whitespace_re = re.compile(r'\s+')
+_abbreviations = [(re.compile('\\b%s\\.' % x), '%s' % x) for x in ['Sr', 'Sra', 'Srta', 'Dr', 'Dra', 'Prof']]
+_number_re = re.compile(r'[0-9]+')
+_currency_re = re.compile(r'([0-9]+)\s?(€|EUR|USD|\$)')
+_time_re = re.compile(r'([0-9]{1,2}):([0-9]{2})')
+_ordinal_re = re.compile(r'([0-9]+)[°º]')
+_date_re = re.compile(r'([0-9]{1,2})/([0-9]{1,2})/([0-9]{2,4})')
+_temperature_re = re.compile(r'([0-9]+)°C')
 
-# 西班牙语字形到音素的映射 - 扩展版本
-_g2p_map = {
-    'a': 'a',
-    'á': 'á',
-    'b': 'b',  # 在词首和m,n后发/b/，其他情况发/β/
-    'c': 'k',  # 在e,i前发/s/或/θ/，其他情况发/k/
-    'd': 'd',  # 在词首和l,n后发/d/，其他情况发/ð/
-    'e': 'e',
-    'é': 'é',
-    'f': 'f',
-    'g': 'g',  # 在e,i前发/x/，其他情况发/g/或/ɣ/
-    'h': '',   # 西班牙语中h通常不发音
-    'i': 'i',
-    'í': 'í',
-    'j': 'j',  # 发/x/
-    'k': 'k',
-    'l': 'l',
-    'm': 'm',
-    'n': 'n',
-    'ñ': 'ñ',  # 发/ɲ/
-    'o': 'o',
-    'ó': 'ó',
-    'p': 'p',
-    'q': 'k',  # 通常与u连用，qu发/k/
-    'r': 'r',  # 单r发/ɾ/，词首r发/r/
-    's': 's',  # 在清辅音前或词尾可能发/s/或/h/
-    't': 't',
-    'u': 'u',  # 在q,g后通常不发音
-    'ú': 'ú',
-    'ü': 'ü',  # 在g后发/w/
-    'v': 'b',  # 在西班牙语中，v发音与b相同
-    'w': 'w',  # 外来词中使用
-    'x': 'x',  # 发/ks/，在词首可能发/s/
-    'y': 'y',  # 作为辅音时发/j/，作为元音时发/i/
-    'z': 'z',  # 发/s/或/θ/
-    ' ': ' ',
-    '.': '.',
-    ',': ',',
-    '!': '!',
-    '?': '?',
-    ';': ';',
-    ':': ':',
-    '-': '-'
+# 西班牙语数字到文字的映射
+_num2words = {
+    '0': 'cero', '1': 'uno', '2': 'dos', '3': 'tres', '4': 'cuatro', '5': 'cinco',
+    '6': 'seis', '7': 'siete', '8': 'ocho', '9': 'nueve', '10': 'diez',
+    '11': 'once', '12': 'doce', '13': 'trece', '14': 'catorce', '15': 'quince',
+    '16': 'dieciséis', '17': 'diecisiete', '18': 'dieciocho', '19': 'diecinueve',
+    '20': 'veinte', '30': 'treinta', '40': 'cuarenta', '50': 'cincuenta',
+    '60': 'sesenta', '70': 'setenta', '80': 'ochenta', '90': 'noventa',
 }
 
-# 特殊组合音素映射 - 扩展版本
-_special_combinations = {
-    # 辅音组合
-    'ch': 'ch',  # 发/tʃ/
-    'll': 'll',  # 发/ʎ/或/j/
-    'rr': 'rr',  # 发/r/
-    'qu': 'k',   # 在e,i前发/k/
-    'gu': 'g',   # 在e,i前发/g/
-    'gü': 'gü',  # 发/gw/
-    'ce': 'se',  # 发/se/或/θe/
-    'ci': 'si',  # 发/si/或/θi/
-    'ge': 'je',  # 发/xe/
-    'gi': 'ji',  # 发/xi/
-    'za': 'sa',  # 发/sa/或/θa/
-    'ze': 'se',  # 发/se/或/θe/
-    'zi': 'si',  # 发/si/或/θi/
-    'zo': 'so',  # 发/so/或/θo/
-    'zu': 'su',  # 发/su/或/θu/
-    
-    # 元音组合
-    'ue': 'we',  # 发/we/
-    'ua': 'wa',  # 发/wa/
-    'uo': 'wo',  # 发/wo/
-    'ui': 'wi',  # 发/wi/
-    'ie': 'ie',  # 发/ie/
-    'ia': 'ia',  # 发/ia/
-    'io': 'io',  # 发/io/
-    'iu': 'iu',  # 发/iu/
-    'ei': 'ei',  # 发/ei/
-    'ai': 'ai',  # 发/ai/
-    'oi': 'oi',  # 发/oi/
-    'au': 'au',  # 发/au/
-    'eu': 'eu',  # 发/eu/
-    'ou': 'ou',  # 发/ou/
-    
-    # 辅音+l/r组合
-    'fl': 'fl',
-    'fr': 'fr',
-    'pl': 'pl',
-    'pr': 'pr',
-    'bl': 'bl',
-    'br': 'br',
-    'cl': 'cl',
-    'cr': 'cr',
-    'gl': 'gl',
-    'gr': 'gr',
-    'dr': 'dr',
-    'tr': 'tr',
+# 西班牙语音素集
+es_phonemes = {
+    'consonants': [
+        'b', 'd', 'f', 'g', 'k', 'l', 'm', 'n', 'p', 'r', 's', 't', 'x', 'B', 'D', 'G', 'L', 'R', 'T', 'N', 'J',
+    ],
+    'vowels': [
+        'a', 'e', 'i', 'o', 'u', 'A', 'E', 'I', 'O', 'U',
+    ],
+    'special': [
+        'h', 'j', 'w', 'y', 'z',
+    ],
 }
 
-# 标点符号映射
-rep_map = {
-    "：": ":",
-    "；": ";",
-    "，": ",",
-    "。": ".",
-    "！": "!",
-    "？": "?",
-    "\n": ".",
-    "·": ",",
-    "、": ",",
-    "...": "…",
-    "$": ".",
-    "/": ",",
-    "—": "-",
-    "~": "…",
-    "～": "…",
+# 西班牙语音素到字母的映射
+es_phoneme_to_letter = {
+    'a': 'a', 'e': 'e', 'i': 'i', 'o': 'o', 'u': 'u',
+    'A': 'á', 'E': 'é', 'I': 'í', 'O': 'ó', 'U': 'ú',
+    'b': 'b', 'd': 'd', 'f': 'f', 'g': 'g', 'k': 'c',
+    'l': 'l', 'm': 'm', 'n': 'n', 'p': 'p', 'r': 'r', 's': 's', 't': 't',
+    'B': 'v', 'D': 'dh', 'G': 'gh', 'L': 'll', 'R': 'rr', 'T': 'ch', 'N': 'ñ', 'J': 'j',
+    'h': 'h', 'j': 'j', 'w': 'w', 'y': 'y', 'z': 'z',
+    'x': 'x',
 }
 
-def replace_punctuation(text):
-    pattern = re.compile("|".join(re.escape(p) for p in rep_map.keys()))
-    return pattern.sub(lambda x: rep_map[x.group()], text)
+def normalize_text(text: str) -> str:
+    """
+    规范化西班牙语文本
 
-def replace_consecutive_punctuation(text):
-    punctuations = ",.!?;:"
-    pattern = f"([{re.escape(punctuations)}])\\1+"
-    result = re.sub(pattern, r"\1", text)
-    return result
+    Args:
+        text: 输入文本
 
-def text_normalize(text: str) -> str:
-    """西班牙语文本规范化"""
-    # 转换为小写
-    text = text.lower()
+    Returns:
+        规范化后的文本
+    """
+    # 转换为小写并去除两端空白
+    text = text.lower().strip()
     
-    # 替换数字
-    text = re.sub(r'\d+', lambda m: _convert_number(m.group(0)), text)
+    # 将所有的标点符号替换为空格，但保留句号和逗号
+    punctuation = set(char for char in string.punctuation) - {'.', ','}
+    for char in punctuation:
+        text = text.replace(char, ' ')
     
-    # 处理标点符号
-    text = replace_punctuation(text)
+    # 将重复的空格替换为单个空格
+    text = _whitespace_re.sub(' ', text)
     
-    # 处理多余的空格
-    text = re.sub(r'\s+', ' ', text)
+    # 处理缩写
+    for regex, replacement in _abbreviations:
+        text = regex.sub(replacement, text)
     
-    # 避免重复标点引起的参考泄露
-    text = replace_consecutive_punctuation(text)
-    
-    # 处理常见缩写
-    text = _expand_abbreviations(text)
-    
-    # 处理特殊字符
-    text = _handle_special_chars(text)
-    
-    return text.strip()
-
-def _convert_number(number_str: str) -> str:
-    """将数字转换为西班牙语单词 - 增强版"""
-    try:
-        num = int(number_str)
-        if num == 0:
-            return "cero"
-        elif 1 <= num <= 15:
-            return _convert_small_number(num)
-        elif 16 <= num <= 19:
-            return f"dieci{_convert_small_number(num - 10)}"
-        elif 20 <= num <= 29:
-            if num == 20:
-                return "veinte"
-            else:
-                return f"veinti{_convert_small_number(num - 20)}"
-        elif 30 <= num <= 99:
-            tens = num // 10
-            units = num % 10
-            if units == 0:
-                return _get_tens(tens)
-            else:
-                return f"{_get_tens(tens)} y {_convert_small_number(units)}"
-        elif 100 <= num <= 999:
-            hundreds = num // 100
-            remainder = num % 100
-            if remainder == 0:
-                return _get_hundreds(hundreds)
-            else:
-                return f"{_get_hundreds(hundreds)} {_convert_number(str(remainder))}"
-        elif 1000 <= num <= 999999:
-            thousands = num // 1000
-            remainder = num % 1000
-            if thousands == 1:
-                thousand_text = "mil"
-            else:
-                thousand_text = f"{_convert_number(str(thousands))} mil"
-            
-            if remainder == 0:
-                return thousand_text
-            else:
-                return f"{thousand_text} {_convert_number(str(remainder))}"
+    # 处理货币
+    def _currency_helper(match):
+        amount, currency = match.groups()
+        amount_text = ' '.join([_num2words.get(n, n) for n in amount])
+        if currency in ['€', 'EUR']:
+            return f"{amount_text} euros"
         else:
-            # 对于更大的数字，简单返回数字串
-            return " ".join(number_str)
-    except ValueError:
-        # 如果转换失败，返回原始字符串
-        return number_str
+            return f"{amount_text} dólares"
 
-def _convert_small_number(num: int) -> str:
-    """转换1-15的小数字"""
-    small_numbers = {
-        1: "uno", 2: "dos", 3: "tres", 4: "cuatro", 5: "cinco",
-        6: "seis", 7: "siete", 8: "ocho", 9: "nueve", 10: "diez",
-        11: "once", 12: "doce", 13: "trece", 14: "catorce", 15: "quince"
-    }
-    return small_numbers.get(num, "")
-
-def _get_tens(tens: int) -> str:
-    """获取十位数的名称"""
-    tens_names = {
-        3: "treinta", 4: "cuarenta", 5: "cincuenta",
-        6: "sesenta", 7: "setenta", 8: "ochenta", 9: "noventa"
-    }
-    return tens_names.get(tens, "")
-
-def _get_hundreds(hundreds: int) -> str:
-    """获取百位数的名称"""
-    hundreds_names = {
-        1: "cien", 2: "doscientos", 3: "trescientos", 4: "cuatrocientos", 5: "quinientos",
-        6: "seiscientos", 7: "setecientos", 8: "ochocientos", 9: "novecientos"
-    }
-    # 特殊情况：如果后面有其他数字，"cien"变为"ciento"
-    if hundreds == 1:
-        return "ciento"
-    return hundreds_names.get(hundreds, "")
-
-def _expand_abbreviations(text: str) -> str:
-    """展开西班牙语常见缩写"""
-    abbreviations = {
-        r'\bsr\b': 'señor',
-        r'\bsra\b': 'señora',
-        r'\bdr\b': 'doctor',
-        r'\bdra\b': 'doctora',
-        r'\bprof\b': 'profesor',
-        r'\bprofa\b': 'profesora',
-        r'\bavda\b': 'avenida',
-        r'\betc\b': 'etcétera',
-        r'\bej\b': 'ejemplo',
-        r'\bpág\b': 'página',
-        r'\btel\b': 'teléfono',
-    }
+    text = _currency_re.sub(_currency_helper, text)
     
-    for abbr, expansion in abbreviations.items():
-        text = re.sub(abbr, expansion, text, flags=re.IGNORECASE)
+    # 处理时间
+    def _time_helper(match):
+        hour, minute = match.groups()
+        hour_text = _num2words.get(hour, hour)
+        if minute == '00':
+            return f"{hour_text} en punto"
+        minute_text = _num2words.get(minute, minute)
+        return f"{hour_text} y {minute_text}"
+
+    text = _time_re.sub(_time_helper, text)
+    
+    # 处理序数
+    def _ordinal_helper(match):
+        number = match.group(1)
+        if number == '1':
+            return "primero"
+        elif number == '2':
+            return "segundo"
+        elif number == '3':
+            return "tercero"
+        else:
+            return _num2words.get(number, number)
+
+    text = _ordinal_re.sub(_ordinal_helper, text)
+    
+    # 处理日期
+    def _date_helper(match):
+        day, month, year = match.groups()
+        day_text = _num2words.get(day, day)
+        
+        months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 
+                 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+        try:
+            month_text = months[int(month) - 1]
+        except (ValueError, IndexError):
+            month_text = month
+        
+        year_text = ''
+        for digit in year:
+            year_text += _num2words.get(digit, digit) + ' '
+        
+        return f"{day_text} de {month_text} de {year_text.strip()}"
+
+    text = _date_re.sub(_date_helper, text)
+    
+    # 处理温度
+    def _temperature_helper(match):
+        temp = match.group(1)
+        temp_text = _num2words.get(temp, temp)
+        return f"{temp_text} grados celsius"
+
+    text = _temperature_re.sub(_temperature_helper, text)
+    
+    # 处理普通数字
+    def _number_helper(match):
+        number = match.group(0)
+        if len(number) == 1:
+            return _num2words.get(number, number)
+        elif len(number) == 2:
+            if number in _num2words:
+                return _num2words[number]
+            tens, ones = number
+            if ones == '0':
+                return _num2words.get(number, number)
+            tens_text = _num2words.get(tens + '0', '')
+            ones_text = _num2words.get(ones, ones)
+            return f"{tens_text} y {ones_text}"
+        else:
+            # 对于更大的数字，转换每一位
+            return ' '.join([_num2words.get(n, n) for n in number])
+
+    text = _number_re.sub(_number_helper, text)
     
     return text
 
-def _handle_special_chars(text: str) -> str:
-    """处理特殊字符"""
-    # 替换特殊字符
-    special_chars = {
-        'æ': 'ae',
-        'œ': 'oe',
-        'ö': 'o',
-        'ä': 'a',
-        'ë': 'e',
-        'ï': 'i',
-    }
-    
-    for char, replacement in special_chars.items():
-        text = text.replace(char, replacement)
-    
-    return text
+def _get_spanish_phonemes(word: str) -> List[str]:
+    """
+    获取西班牙语单词的音素表示
+    这是一个简化的音素转换，真实的系统会更复杂
 
-def _get_context_dependent_pronunciation(char: str, prev_char: str, next_char: str, word_start: bool = False) -> str:
-    """根据上下文获取字符的发音"""
-    # 处理上下文相关的发音规则
-    if char == 'c':
-        if next_char in ['e', 'i', 'é', 'í']:
-            return 's'  # 在拉丁美洲西班牙语中，c在e,i前发/s/
+    Args:
+        word: 输入单词
+
+    Returns:
+        音素列表
+    """
+    phonemes = []
+    skip_next = False
+    for i, char in enumerate(word):
+        if skip_next:
+            skip_next = False
+            continue
+            
+        # 处理重音符号
+        if unicodedata.category(char).startswith('M'):
+            continue
+        
+        char_lower = unicodedata.normalize('NFD', char.lower()).replace('\u0301', '')
+        
+        # 元音音素
+        if char_lower in 'aeiou':
+            # 检查是否带有重音符号
+            if i > 0 and unicodedata.category(word[i-1]).startswith('M'):
+                phonemes.append(char_lower.upper())  # 重音元音
+            else:
+                phonemes.append(char_lower)
+        
+        # 辅音音素
+        elif char_lower == 'b' or char_lower == 'v':
+            phonemes.append('b')
+        elif char_lower == 'c':
+            if i + 1 < len(word) and word[i + 1].lower() in 'ei':
+                phonemes.append('s')
+            elif i + 1 < len(word) and word[i + 1].lower() == 'h':
+                phonemes.append('T')  # ch
+                skip_next = True
+            else:
+                phonemes.append('k')
+        elif char_lower == 'd':
+            phonemes.append('d')
+        elif char_lower == 'f':
+            phonemes.append('f')
+        elif char_lower == 'g':
+            if i + 1 < len(word) and word[i + 1].lower() in 'ei':
+                phonemes.append('J')  # j sound
+            else:
+                phonemes.append('g')
+        elif char_lower == 'h':
+            # 西班牙语中h通常不发音，忽略
+            pass
+        elif char_lower == 'j':
+            phonemes.append('J')
+        elif char_lower == 'k':
+            phonemes.append('k')
+        elif char_lower == 'l':
+            if i + 1 < len(word) and word[i + 1].lower() == 'l':
+                phonemes.append('L')  # ll
+                skip_next = True
+            else:
+                phonemes.append('l')
+        elif char_lower == 'm':
+            phonemes.append('m')
+        elif char_lower == 'n':
+            if i + 1 < len(word) and word[i + 1].lower() == 'y':
+                phonemes.append('N')  # ñ
+                skip_next = True
+            else:
+                phonemes.append('n')
+        elif char_lower == 'ñ':
+            phonemes.append('N')
+        elif char_lower == 'p':
+            phonemes.append('p')
+        elif char_lower == 'q':
+            if i + 1 < len(word) and word[i + 1].lower() == 'u':
+                if i + 2 < len(word) and word[i + 2].lower() in 'ei':
+                    phonemes.append('k')
+                    skip_next = True
+                else:
+                    phonemes.append('k')
+                    if i + 2 < len(word) and word[i + 2].lower() not in 'aeiou':
+                        skip_next = True  # Skip 'u' if it's not pronounced
+            else:
+                phonemes.append('k')
+        elif char_lower == 'r':
+            if i == 0 or (i > 0 and word[i - 1] in 'nlms'):
+                phonemes.append('R')  # Strong r at the beginning or after n, l, m, s
+            elif i + 1 < len(word) and word[i + 1].lower() == 'r':
+                phonemes.append('R')  # rr
+                skip_next = True
+            else:
+                phonemes.append('r')
+        elif char_lower == 's':
+            phonemes.append('s')
+        elif char_lower == 't':
+            phonemes.append('t')
+        elif char_lower == 'w':
+            phonemes.append('w')
+        elif char_lower == 'x':
+            phonemes.append('k')
+            phonemes.append('s')
+        elif char_lower == 'y':
+            if i == 0 or word[i - 1] in ' .,:;!?':
+                phonemes.append('y')  # Consonant y at the beginning
+            else:
+                phonemes.append('i')  # Vowel y elsewhere
+        elif char_lower == 'z':
+            phonemes.append('s')  # In European Spanish, would be 'T' (like 'th' in "think")
+        
+        # 其他特殊字符可能会被忽略
     
-    elif char == 'g':
-        if next_char in ['e', 'i', 'é', 'í']:
-            return 'j'  # g在e,i前发/x/
-    
-    elif char == 'r':
-        if word_start or prev_char in [' ', '.', ',', '!', '?', ';', ':', '-', 'n', 'l', 's']:
-            return 'rr'  # 词首的r发/r/
-    
-    elif char == 'y':
-        if next_char in [' ', '.', ',', '!', '?', ';', ':', '-'] or next_char == '':
-            return 'i'  # 词尾的y作为元音发/i/
-    
-    elif char == 'z':
-        return 's'  # 在拉丁美洲西班牙语中，z发/s/
-    
-    # 默认返回基本映射
-    return _g2p_map.get(char, char)
+    return phonemes
 
 def g2p(text: str) -> Tuple[List[str], List[int]]:
-    """西班牙语字形到音素转换 - 增强版"""
-    text = text_normalize(text)
+    """
+    将西班牙语文本转换为音素序列和词到音素的映射
+
+    Args:
+        text: 输入文本
+
+    Returns:
+        (音素列表, 词到音素的映射列表)
+    """
+    # 将文本按空格分割成单词
+    words = text.split()
     
-    phonemes = []
+    # 获取每个单词的音素
+    all_phonemes = []
     word2ph = []
     
-    words = text.split()
-    for word_idx, word in enumerate(words):
-        word_phonemes = []
-        word_word2ph = []
+    for word in words:
+        # 获取单词的音素
+        phonemes = _get_spanish_phonemes(word)
         
-        i = 0
-        while i < len(word):
-            # 检查特殊组合
-            found_special = False
-            for combo, phoneme in _special_combinations.items():
-                if i + len(combo) <= len(word) and word[i:i+len(combo)] == combo:
-                    word_phonemes.append(phoneme)
-                    word_word2ph.append(len(combo))
-                    i += len(combo)
-                    found_special = True
-                    break
-            
-            if not found_special:
-                # 处理单个字符，考虑上下文
-                char = word[i]
-                prev_char = word[i-1] if i > 0 else ' '
-                next_char = word[i+1] if i < len(word)-1 else ' '
-                word_start = (i == 0)
-                
-                # 获取上下文相关的发音
-                phoneme = _get_context_dependent_pronunciation(char, prev_char, next_char, word_start)
-                
-                if phoneme:  # 跳过空音素（如h）
-                    word_phonemes.append(phoneme)
-                    word_word2ph.append(1)
-                else:
-                    word_word2ph.append(1)  # 对于不发音的字符，仍然需要记录word2ph
-                i += 1
-        
-        # 添加单词的音素和word2ph
-        phonemes.extend(word_phonemes)
-        word2ph.extend(word_word2ph)
-        
-        # 如果不是最后一个单词，添加空格
-        if word_idx < len(words) - 1:
-            phonemes.append(' ')
-            word2ph.append(1)
+        if phonemes:  # 如果音素不为空
+            all_phonemes.extend(phonemes)
+            word2ph.append(len(phonemes))
+        else:
+            # 如果没有音素（例如标点符号等），跳过
+            continue
     
-    return phonemes, word2ph
+    return all_phonemes, word2ph

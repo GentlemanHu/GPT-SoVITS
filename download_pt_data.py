@@ -276,6 +276,110 @@ def process_coraa(extract_dir, output_dir, dialect):
     
     logger.info(f"处理了 {count} 个音频文件")
 
+def process_mls(extract_dir, output_dir, dialect):
+    """
+    处理MLS数据集
+    """
+    logger.info("处理MLS数据集...")
+    
+    # 寻找MLS数据集目录
+    mls_dir = None
+    for root, dirs, files in os.walk(extract_dir):
+        if 'mls_portuguese' in dirs:
+            mls_dir = os.path.join(root, 'mls_portuguese')
+            break
+    
+    if not mls_dir:
+        logger.error("未找到MLS葡萄牙语数据集目录")
+        return
+    
+    # 查找音频文件和转录文件
+    metadata_path = os.path.join(output_dir, 'metadata.csv')
+    logger.info(f"创建metadata.csv: {metadata_path}")
+    
+    with open(metadata_path, 'w', encoding='utf-8') as metadata_file:
+        # 写入标题
+        metadata_file.write("file_path|speaker|text|language\n")
+        
+        # 处理训练集
+        train_dir = os.path.join(mls_dir, 'train')
+        train_audio_dir = os.path.join(train_dir, 'audio')
+        train_trans_file = os.path.join(train_dir, 'transcripts.txt')
+        
+        if os.path.exists(train_trans_file):
+            process_mls_split(train_audio_dir, train_trans_file, output_dir, metadata_file, dialect)
+        
+        # 处理验证集
+        dev_dir = os.path.join(mls_dir, 'dev')
+        dev_audio_dir = os.path.join(dev_dir, 'audio')
+        dev_trans_file = os.path.join(dev_dir, 'transcripts.txt')
+        
+        if os.path.exists(dev_trans_file):
+            process_mls_split(dev_audio_dir, dev_trans_file, output_dir, metadata_file, dialect)
+    
+    logger.info(f"metadata.csv创建完成")
+
+def process_mls_split(audio_dir, trans_file, output_dir, metadata_file, dialect):
+    """
+    处理MLS数据集的一个分割
+    """
+    # 读取转录文件
+    transcripts = {}
+    count = 0
+    
+    logger.info(f"读取转录文件: {trans_file}")
+    with open(trans_file, 'r', encoding='utf-8') as f:
+        for line in f:
+            parts = line.strip().split('\t')
+            if len(parts) == 2:
+                file_id, text = parts
+                transcripts[file_id] = text
+                count += 1
+                if count >= 1000:  # 限制处理的样本数量
+                    break
+    
+    logger.info(f"读取了 {count} 条转录")
+    
+    # 查找音频文件并处理
+    processed_count = 0
+    for file_id, text in transcripts.items():
+        # 查找对应的音频文件
+        flac_files = []
+        for root, dirs, files in os.walk(audio_dir):
+            for file in files:
+                if file == f"{file_id}.flac":
+                    flac_files.append(os.path.join(root, file))
+        
+        for flac_path in flac_files:
+            # 提取子目录作为说话者ID
+            rel_path = os.path.relpath(os.path.dirname(flac_path), audio_dir)
+            speaker_id = rel_path.split(os.path.sep)[0]
+            
+            # 输出WAV文件名
+            wav_filename = f"{file_id}.wav"
+            wav_path = os.path.join(output_dir, wav_filename)
+            
+            # 使用ffmpeg转换flac到wav
+            subprocess.run([
+                'ffmpeg', '-i', flac_path, '-ar', '24000', '-ac', '1',
+                '-hide_banner', '-loglevel', 'error', wav_path
+            ])
+            
+            # 写入metadata
+            metadata_file.write(f"{wav_filename}|speaker_{speaker_id}|{text}|pt\n")
+            processed_count += 1
+            
+            # 每处理10个音频文件，记录一次日志
+            if processed_count % 10 == 0:
+                logger.info(f"已处理 {processed_count} 个音频文件")
+            
+            # 限制数量，避免数据集过大
+            if processed_count >= 500:
+                logger.info(f"已达到处理上限，共处理 {processed_count} 个音频文件")
+                return
+    
+    logger.info(f"处理了 {processed_count} 个音频文件")
+
 def main():
     parser = argparse.ArgumentParser(description='下载葡萄牙语语音数据集')
     parser.add_argument('--dataset-type', type=str, default='common_voice',
@@ -322,6 +426,8 @@ def main():
         process_common_voice(extract_dir, raw_dir, args.dialect)
     elif args.dataset_type == 'coraa':
         process_coraa(extract_dir, raw_dir, args.dialect)
+    elif args.dataset_type == 'mls':
+        process_mls(extract_dir, raw_dir, args.dialect)
     else:
         logger.warning(f"暂不支持自动处理 {args.dataset_type} 数据集，请手动处理")
     
