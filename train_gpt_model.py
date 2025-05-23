@@ -17,6 +17,11 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.strategies import DDPStrategy
 
+# 添加GPT-SoVITS路径到系统路径
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, current_dir)
+sys.path.insert(0, os.path.join(current_dir, 'GPT_SoVITS'))
+
 # 设置日志
 logging.basicConfig(
     level=logging.INFO,
@@ -142,9 +147,19 @@ def main():
     os.environ["USE_LIBUV"] = "0"
     
     # 导入GPT-SoVITS模块
-    sys.path.insert(0, os.getcwd())
-    from AR.models.t2s_lightning_module import Text2SemanticLightningModule
-    from AR.data.data_module import Text2SemanticDataModule
+    try:
+        from GPT_SoVITS.AR.models.t2s_lightning_module import Text2SemanticLightningModule
+        from GPT_SoVITS.AR.data.data_module import Text2SemanticDataModule
+    except ImportError:
+        try:
+            from AR.models.t2s_lightning_module import Text2SemanticLightningModule
+            from AR.data.data_module import Text2SemanticDataModule
+        except ImportError:
+            logger.error("无法导入AR模块，请确保GPT-SoVITS环境配置正确")
+            logger.error("请检查以下路径是否存在:")
+            logger.error(f"  - {os.path.join(current_dir, 'GPT_SoVITS', 'AR')}")
+            logger.error(f"  - {os.path.join(current_dir, 'AR')}")
+            sys.exit(1)
     
     # 创建训练器
     trainer = Trainer(

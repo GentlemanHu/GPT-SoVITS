@@ -341,8 +341,18 @@ fi
 # 执行数据预处理脚本
 if [ "$SKIP_PREPROCESS" = false ]; then
     log "${YELLOW}开始预处理${LANGUAGE_NAME}数据...${NC}"
-    python preprocess_data.py --language "$LANGUAGE" --data-dir "$DATA_DIR" --sample-rate "$SAMPLE_RATE" --dialect "$DIALECT" 2>&1 | tee -a "$LOG_FILE"
-    PREPROCESS_STATUS=${PIPESTATUS[0]}
+    
+    # 首先尝试使用简化版本的预处理
+    if [ -f "preprocess_data_simple.py" ]; then
+        log "使用简化版本的预处理脚本..."
+        python preprocess_data_simple.py --language "$LANGUAGE" --data-dir "$DATA_DIR" --sample-rate "$SAMPLE_RATE" --dialect "$DIALECT" 2>&1 | tee -a "$LOG_FILE"
+        PREPROCESS_STATUS=${PIPESTATUS[0]}
+    else
+        log "使用原始预处理脚本..."
+        python preprocess_data.py --language "$LANGUAGE" --data-dir "$DATA_DIR" --sample-rate "$SAMPLE_RATE" --dialect "$DIALECT" 2>&1 | tee -a "$LOG_FILE"
+        PREPROCESS_STATUS=${PIPESTATUS[0]}
+    fi
+    
     if [ $PREPROCESS_STATUS -ne 0 ]; then
         log "${RED}数据预处理失败, 错误代码: $PREPROCESS_STATUS${NC}"
         exit 1
@@ -355,8 +365,18 @@ fi
 if [ "$SKIP_TRAINING" = false ]; then
     # 训练GPT模型
     log "${YELLOW}开始训练${LANGUAGE_NAME} GPT模型...${NC}"
-    python train_gpt_model.py --language "$LANGUAGE" --data-dir "$DATA_DIR/${LANGUAGE}_corpus/prepared" --batch-size "$BATCH_SIZE" --max-epochs "$MAX_EPOCHS" --device "$DEVICE" --dialect "$DIALECT" 2>&1 | tee -a "$LOG_FILE"
-    GPT_STATUS=${PIPESTATUS[0]}
+    
+    # 使用简化版本的训练脚本
+    if [ -f "train_gpt_simple.py" ]; then
+        log "使用简化版本的GPT训练脚本..."
+        python train_gpt_simple.py --language "$LANGUAGE" --data-dir "$DATA_DIR/${LANGUAGE}_corpus/prepared" --batch-size "$BATCH_SIZE" --max-epochs "$MAX_EPOCHS" --device "$DEVICE" 2>&1 | tee -a "$LOG_FILE"
+        GPT_STATUS=${PIPESTATUS[0]}
+    else
+        log "使用原始GPT训练脚本..."
+        python train_gpt_model.py --language "$LANGUAGE" --data-dir "$DATA_DIR/${LANGUAGE}_corpus/prepared" --batch-size "$BATCH_SIZE" --max-epochs "$MAX_EPOCHS" --device "$DEVICE" --dialect "$DIALECT" 2>&1 | tee -a "$LOG_FILE"
+        GPT_STATUS=${PIPESTATUS[0]}
+    fi
+    
     if [ $GPT_STATUS -ne 0 ]; then
         log "${RED}GPT模型训练失败, 错误代码: $GPT_STATUS${NC}"
         exit 1
@@ -365,8 +385,18 @@ if [ "$SKIP_TRAINING" = false ]; then
     
     # 训练SoVITS模型
     log "${YELLOW}开始训练${LANGUAGE_NAME} SoVITS模型...${NC}"
-    python train_sovits_model.py --language "$LANGUAGE" --data-dir "$DATA_DIR/${LANGUAGE}_corpus/prepared" --batch-size "$BATCH_SIZE" --max-epochs "$MAX_EPOCHS" --device "$DEVICE" --dialect "$DIALECT" 2>&1 | tee -a "$LOG_FILE"
-    SOVITS_STATUS=${PIPESTATUS[0]}
+    
+    # 使用简化版本的训练脚本
+    if [ -f "train_sovits_simple.py" ]; then
+        log "使用简化版本的SoVITS训练脚本..."
+        python train_sovits_simple.py --language "$LANGUAGE" --data-dir "$DATA_DIR/${LANGUAGE}_corpus/prepared" --batch-size "$BATCH_SIZE" --max-epochs "$MAX_EPOCHS" --device "$DEVICE" 2>&1 | tee -a "$LOG_FILE"
+        SOVITS_STATUS=${PIPESTATUS[0]}
+    else
+        log "使用原始SoVITS训练脚本..."
+        python train_sovits_model.py --language "$LANGUAGE" --data-dir "$DATA_DIR/${LANGUAGE}_corpus/prepared" --batch-size "$BATCH_SIZE" --max-epochs "$MAX_EPOCHS" --device "$DEVICE" --dialect "$DIALECT" 2>&1 | tee -a "$LOG_FILE"
+        SOVITS_STATUS=${PIPESTATUS[0]}
+    fi
+    
     if [ $SOVITS_STATUS -ne 0 ]; then
         log "${RED}SoVITS模型训练失败, 错误代码: $SOVITS_STATUS${NC}"
         exit 1

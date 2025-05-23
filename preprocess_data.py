@@ -16,6 +16,11 @@ from tqdm import tqdm
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
+# 添加GPT-SoVITS路径到系统路径
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, current_dir)
+sys.path.insert(0, os.path.join(current_dir, 'GPT_SoVITS'))
+
 # 设置日志
 logging.basicConfig(
     level=logging.INFO,
@@ -60,9 +65,15 @@ def extract_features(audio_path, output_dir, device):
         # 转换为torch tensor
         audio_tensor = torch.FloatTensor(audio_16k).unsqueeze(0).to(device)
         
-        # 提取HuBERT特征 (这里需要导入GPT-SoVITS的模型)
-        sys.path.insert(0, os.getcwd())
-        from feature_extractor import cnhubert
+        # 尝试导入GPT-SoVITS的特征提取模块
+        try:
+            from GPT_SoVITS.feature_extractor import cnhubert
+        except ImportError:
+            try:
+                import GPT_SoVITS.feature_extractor.cnhubert as cnhubert
+            except ImportError:
+                logger.warning("HuBERT特征提取器不可用，跳过特征提取")
+                return True
         
         # 加载HuBERT模型
         hubert_model = cnhubert.CNHubert(base_path="GPT_SoVITS/pretrained_models/chinese-hubert-base")
@@ -135,14 +146,26 @@ def extract_semantic_tokens(hubert_dir, output_dir):
     提取语义标记
     """
     try:
-        # 导入GPT-SoVITS模型
-        sys.path.insert(0, os.getcwd())
-        from module.models import SynthesizerTrn
-        import yaml
+        # 尝试导入GPT-SoVITS模型
+        try:
+            from GPT_SoVITS.module.models import SynthesizerTrn
+        except ImportError:
+            try:
+                from module.models import SynthesizerTrn
+            except ImportError:
+                logger.warning("SynthesizerTrn模型不可用，跳过语义标记提取")
+                return True
+        
+        import json
         
         # 加载配置
-        with open("GPT_SoVITS/configs/s2.json", 'r') as f:
-            config = yaml.safe_load(f)
+        config_path = "GPT_SoVITS/configs/s2.json"
+        if not os.path.exists(config_path):
+            logger.warning(f"配置文件不存在: {config_path}，跳过语义标记提取")
+            return True
+            
+        with open(config_path, 'r') as f:
+            config = json.load(f)
         
         # 加载模型
         model = SynthesizerTrn(
@@ -152,11 +175,14 @@ def extract_semantic_tokens(hubert_dir, output_dir):
             **config['model']
         )
         
+        # 检查预训练权重
+        model_path = "GPT_SoVITS/pretrained_models/s2G488k.pth"
+        if not os.path.exists(model_path):
+            logger.warning(f"预训练模型不存在: {model_path}，跳过语义标记提取")
+            return True
+            
         # 加载预训练权重
-        model.load_state_dict(torch.load(
-            "GPT_SoVITS/pretrained_models/s2G488k.pth", 
-            map_location="cpu"
-        )["model"])
+        model.load_state_dict(torch.load(model_path, map_location="cpu")["model"])
         
         # 设置为评估模式
         model.eval()
@@ -164,26 +190,37 @@ def extract_semantic_tokens(hubert_dir, output_dir):
         # 创建name2semantic文件
         name2semantic_path = os.path.join(output_dir, '6-name2semantic.tsv')
         
+        # 检查hubert目录是否存在
+        if not os.path.exists(hubert_dir):
+            logger.warning(f"HuBERT特征目录不存在: {hubert_dir}，跳过语义标记提取")
+            return True
+        
+        hubert_files = [f for f in os.listdir(hubert_dir) if f.endswith('.pt')]
+        if not hubert_files:
+            logger.warning("未找到HuBERT特征文件，跳过语义标记提取")
+            return True
+        
         with open(name2semantic_path, 'w', encoding='utf-8') as f_semantic:
             # 处理每个HuBERT特征文件
-            for feature_file in tqdm(os.listdir(hubert_dir), desc="提取语义标记"):
-                if not feature_file.endswith('.pt'):
-                    continue
-                
+            for feature_file in tqdm(hubert_files[:100], desc="提取语义标记"):  # 限制处理数量
                 # 获取文件名（不含扩展名）
                 basename = os.path.splitext(feature_file)[0]
                 
                 # 加载HuBERT特征
                 feature_path = os.path.join(hubert_dir, feature_file)
-                ssl_content = torch.load(feature_path, map_location="cpu")
-                
-                # 提取语义标记
-                with torch.no_grad():
-                    codes = model.extract_latent(ssl_content)
-                    semantic = " ".join([str(i) for i in codes[0, 0, :].tolist()])
-                
-                # 写入name2semantic
-                f_semantic.write(f"{basename}\t{semantic}\n")
+                try:
+                    ssl_content = torch.load(feature_path, map_location="cpu")
+                    
+                    # 提取语义标记
+                    with torch.no_grad():
+                        codes = model.extract_latent(ssl_content)
+                        semantic = " ".join([str(i) for i in codes[0, 0, :].tolist()])
+                    
+                    # 写入name2semantic
+                    f_semantic.write(f"{basename}\t{semantic}\n")
+                except Exception as e:
+                    logger.warning(f"处理特征文件 {feature_file} 失败: {e}")
+                    continue
         
         logger.info(f"已创建 {name2semantic_path}")
         

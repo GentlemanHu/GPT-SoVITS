@@ -17,6 +17,11 @@ from pathlib import Path
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
+# 添加GPT-SoVITS路径到系统路径
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, current_dir)
+sys.path.insert(0, os.path.join(current_dir, 'GPT_SoVITS'))
+
 # 设置日志
 logging.basicConfig(
     level=logging.INFO,
@@ -101,11 +106,23 @@ def main():
     set_seed(config['train']['seed'])
     
     # 导入GPT-SoVITS模块
-    sys.path.insert(0, os.getcwd())
-    import utils
-    from module.models import SynthesizerTrn
-    from module.mel_processing import mel_spectrogram_torch, spec_to_mel_torch
-    from module.data_utils import TextAudioSpeakerLoader, TextAudioSpeakerCollate
+    try:
+        import GPT_SoVITS.utils as utils
+        from GPT_SoVITS.module.models import SynthesizerTrn
+        from GPT_SoVITS.module.mel_processing import mel_spectrogram_torch, spec_to_mel_torch
+        from GPT_SoVITS.module.data_utils import TextAudioSpeakerLoader, TextAudioSpeakerCollate
+    except ImportError:
+        try:
+            import utils
+            from module.models import SynthesizerTrn
+            from module.mel_processing import mel_spectrogram_torch, spec_to_mel_torch
+            from module.data_utils import TextAudioSpeakerLoader, TextAudioSpeakerCollate
+        except ImportError:
+            logger.error("无法导入SoVITS模块，请确保GPT-SoVITS环境配置正确")
+            logger.error("请检查以下路径是否存在:")
+            logger.error(f"  - {os.path.join(current_dir, 'GPT_SoVITS', 'module')}")
+            logger.error(f"  - {os.path.join(current_dir, 'module')}")
+            sys.exit(1)
     
     # 创建数据集
     train_dataset = TextAudioSpeakerLoader(
